@@ -1,0 +1,5 @@
+{
+  "name": "Multiview Design & Pm",
+  "description": "Professional design and project management services for houses, shops, and kitchens. Specializing in DA, CC, and CDC application documentation.",
+  "requestFramePermissions": ["camera"]
+}

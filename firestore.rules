@@ -1,0 +1,96 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: /users/{userId}
+    // Fields:
+    //   - email: string (required)
+    //   - displayName: string (optional)
+    //   - photoURL: string (optional)
+    //   - role: string (required, ['admin', 'client'])
+    //
+    // Collection: /posts/{postId}
+    // Fields:
+    //   - title: string (required)
+    //   - content: string (required)
+    //   - imageUrl: string (optional)
+    //   - authorId: string (required)
+    //   - authorName: string (optional)
+    //   - createdAt: timestamp (required)
+    //   - likes: number (optional)
+    //
+    // Collection: /posts/{postId}/comments/{commentId}
+    // Fields:
+    //   - postId: string (required)
+    //   - content: string (required)
+    //   - authorId: string (required)
+    //   - authorName: string (optional)
+    //   - createdAt: timestamp (required)
+    //   - status: string (required, ['pending', 'approved', 'rejected'])
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isAdmin() {
+      return isAuthenticated() && (
+        get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' ||
+        (request.auth.token.email == "bien.epwdesigns@gmail.com" && request.auth.token.email_verified == true)
+      );
+    }
+
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'role']) &&
+             data.email is string &&
+             data.role in ['admin', 'client'];
+    }
+
+    function isValidPost(data) {
+      return data.keys().hasAll(['title', 'content', 'authorId', 'createdAt']) &&
+             data.title is string && data.title.size() < 200 &&
+             data.content is string && data.content.size() < 5000 &&
+             data.authorId == request.auth.uid;
+    }
+
+    function isValidComment(data) {
+      return data.keys().hasAll(['postId', 'content', 'authorId', 'createdAt', 'status']) &&
+             data.content is string && data.content.size() < 1000 &&
+             data.authorId == request.auth.uid &&
+             data.status in ['pending', 'approved', 'rejected'];
+    }
+
+    // ===============================================================
+    // Rules
+    // ===============================================================
+
+    match /users/{userId} {
+      allow read: if isAuthenticated();
+      allow create: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == 'client' || isAdmin());
+      allow update: if isOwner(userId) && isValidUser(request.resource.data) && (request.resource.data.role == resource.data.role || isAdmin());
+    }
+
+    match /posts/{postId} {
+      allow read: if true; // Publicly readable
+      allow create: if isAdmin() && isValidPost(request.resource.data);
+      allow update, delete: if isAdmin();
+      
+      match /comments/{commentId} {
+        allow read: if true; // Publicly readable
+        allow create: if isAuthenticated() && isValidComment(request.resource.data);
+        allow update, delete: if isAdmin() || isOwner(resource.data.authorId);
+      }
+    }
+  }
+}
